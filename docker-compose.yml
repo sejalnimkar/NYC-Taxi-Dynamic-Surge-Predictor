@@ -1,0 +1,33 @@
+services:
+  spark-master:
+    image: apache/spark:4.0.2-scala2.13-java17-python3-r-ubuntu
+    container_name: spark-master
+    command: bash -c "/opt/spark/sbin/start-master.sh && tail -f /dev/null"
+    ports:
+      - "8080:8080"
+      - "7077:7077"
+    environment:
+      - SPARK_MODE=master
+
+  spark-worker:
+    image: apache/spark:4.0.2-scala2.13-java17-python3-r-ubuntu
+    container_name: spark-worker
+    command: bash -c "/opt/spark/sbin/start-worker.sh spark://spark-master:7077 && tail -f /dev/null"
+    depends_on:
+      - spark-master
+    environment:
+      - SPARK_MASTER_URL=spark://spark-master:7077
+      - SPARK_WORKER_MEMORY=4G
+      - SPARK_WORKER_CORES=2
+
+  jupyter:
+    image: apache/spark:4.0.2-scala2.13-java17-python3-r-ubuntu
+    container_name: jupyter-notebook
+    user: root
+    ports:
+      - "8888:8888"
+    volumes:
+      - .:/home/jovyan/work
+    depends_on:
+      - spark-master
+    command: bash -c "pip install notebook && python3 -m notebook --ip=0.0.0.0 --port=8888 --no-browser --allow-root"
