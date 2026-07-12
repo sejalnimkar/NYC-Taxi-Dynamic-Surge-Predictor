@@ -1,0 +1,12 @@
+.env
+.venv/
+data/*.parquet
+data/*.csv
+data/*.jpg
+data/__pycache__/
+data/.ipynb_checkpoints/
+notebooks/.ipynb_checkpoints/
+shapefile/
+*.DS_Store
+__pycache__/
+EOF

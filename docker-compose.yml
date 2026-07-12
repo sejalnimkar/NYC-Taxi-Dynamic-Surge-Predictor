@@ -8,6 +8,8 @@ services:
       - "7077:7077"
     environment:
       - SPARK_MODE=master
+    volumes:
+      - .:/home/jovyan/work
 
   spark-worker:
     image: apache/spark:4.0.2-scala2.13-java17-python3-r-ubuntu
@@ -19,9 +21,13 @@ services:
       - SPARK_MASTER_URL=spark://spark-master:7077
       - SPARK_WORKER_MEMORY=4G
       - SPARK_WORKER_CORES=2
+    volumes:
+      - .:/home/jovyan/work
 
   jupyter:
-    image: apache/spark:4.0.2-scala2.13-java17-python3-r-ubuntu
+    build:
+      context: .
+      dockerfile: docker/Dockerfile
     container_name: jupyter-notebook
     user: root
     ports:
