@@ -9,4 +9,5 @@ notebooks/.ipynb_checkpoints/
 shapefile/
 *.DS_Store
 __pycache__/
-EOF
+mlruns/
+logs/

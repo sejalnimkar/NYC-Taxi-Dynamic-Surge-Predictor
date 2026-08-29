@@ -1,0 +1,40 @@
+version: 2
+models:
+  - name: stg_fhvhv_trips
+    description: "Cleaned, typed FHVHV trip records for Jan 2026"
+    columns:
+      - name: pickup_location_id
+        description: "Zone ID where the trip started"
+        tests:
+          - not_null
+          - relationships:
+              arguments:
+                to: ref('taxi_zone_lookup')
+                field: LocationID
+      - name: dropoff_location_id
+        description: "Zone ID where the trip ended"
+        tests:
+          - not_null
+          - relationships:
+              arguments:
+                to: ref('taxi_zone_lookup')
+                field: LocationID
+      - name: hvfhs_license_num
+        description: "For-hire vehicle company license code"
+        tests:
+          - not_null
+          - accepted_values:
+              arguments:
+                values: ['HV0003', 'HV0005']
+      - name: pickup_datetime
+        description: "Trip pickup timestamp"
+        tests:
+          - not_null
+      - name: trip_miles
+        description: "Distance of the trip in miles"
+        tests:
+          - not_null
+      - name: trip_time_seconds
+        description: "Duration of the trip in seconds"
+        tests:
+          - not_null

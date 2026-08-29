@@ -1,0 +1,9 @@
+version: 2
+
+sources:
+  - name: raw
+    database: nyc_taxi
+    schema: surge_predictor
+    tables:
+      - name: fhvhv_trips
+        description: "Raw FHVHV trip records loaded from PySpark-cleaned parquet, Jan 2026"

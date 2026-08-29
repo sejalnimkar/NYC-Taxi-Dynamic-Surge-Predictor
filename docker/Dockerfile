@@ -5,6 +5,21 @@ USER root
 RUN pip install --no-cache-dir \
     notebook \
     pandas \
-    pyarrow
+    pyarrow \
+    pyspark \
+    requests \
+    snowflake-connector-python \
+    snowflake-snowpark-python \
+    geopandas \
+    folium \
+    python-dotenv \
+    dbt-core \
+    dbt-snowflake \
+    mlflow \
+    lightgbm \
+    xgboost \ 
+    optuna \
+    "optuna-integration[mlflow]" 
+
 
 WORKDIR /home/jovyan/work
