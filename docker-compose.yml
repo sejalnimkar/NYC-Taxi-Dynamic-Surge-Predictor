@@ -4,7 +4,7 @@ services:
     container_name: spark-master
     command: bash -c "/opt/spark/sbin/start-master.sh && tail -f /dev/null"
     ports:
-      - "8080:8080"
+      - "9090:8080"
       - "7077:7077"
     environment:
       - SPARK_MODE=master
@@ -20,8 +20,8 @@ services:
       - spark-master
     environment:
       - SPARK_MASTER_URL=spark://spark-master:7077
-      - SPARK_WORKER_MEMORY=8G
-      - SPARK_WORKER_CORES=2
+      - SPARK_WORKER_MEMORY=3G
+      - SPARK_WORKER_CORES=1
     volumes:
       - .:/home/jovyan/work
 
@@ -33,6 +33,11 @@ services:
     user: root
     ports:
       - "8888:8888"
+    environment:
+      - SNOWFLAKE_ACCOUNT=${SNOWFLAKE_ACCOUNT}
+      - SNOWFLAKE_USER=${SNOWFLAKE_USER}
+      - SNOWFLAKE_PASSWORD=${SNOWFLAKE_PASSWORD}
+      - SNOWFLAKE_WAREHOUSE=${SNOWFLAKE_WAREHOUSE}
     volumes:
       - .:/home/jovyan/work
     depends_on:
@@ -49,3 +54,36 @@ services:
       - "5000:5000"
     volumes:
       - ./mlruns:/mlruns  
+
+  airflow:
+    build:
+      context: .
+      dockerfile: docker/airflow.Dockerfile
+    container_name: airflow
+    restart: unless-stopped
+    environment:
+      - AIRFLOW__CORE__EXECUTOR=SequentialExecutor
+      - AIRFLOW__DATABASE__SQL_ALCHEMY_CONN=sqlite:////opt/airflow/airflow.db
+      - AIRFLOW__CORE__LOAD_EXAMPLES=false
+      - _AIRFLOW_WWW_USER_USERNAME=admin
+      - _AIRFLOW_WWW_USER_PASSWORD=admin
+      - AIRFLOW__CORE__DAGS_FOLDER=/opt/airflow/dags
+      # reuse the same Snowflake env-var pattern you already use for dbt
+      - SNOWFLAKE_ACCOUNT=${SNOWFLAKE_ACCOUNT}
+      - SNOWFLAKE_USER=${SNOWFLAKE_USER}
+      - SNOWFLAKE_PASSWORD=${SNOWFLAKE_PASSWORD}
+      - SNOWFLAKE_WAREHOUSE=${SNOWFLAKE_WAREHOUSE}
+    volumes:
+      - ./dags:/opt/airflow/dags
+      - ./dbt:/opt/airflow/dbt          # so BashOperator can `cd` into your dbt project and run dbt commands
+      - ./notebooks:/opt/airflow/scripts # wherever your PySpark scripts live
+      - airflow_db:/opt/airflow
+      - /var/run/docker.sock:/var/run/docker.sock
+    ports:
+      - "8080:8080"
+    command: standalone   # runs webserver + scheduler + triggerer in one process — fine for local/dev
+    networks:
+      - default            # same network as spark-worker, snowflake calls go over internet anyway
+
+volumes:
+  airflow_db:       

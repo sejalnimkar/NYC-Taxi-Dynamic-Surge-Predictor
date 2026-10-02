@@ -11,3 +11,4 @@ shapefile/
 __pycache__/
 mlruns/
 logs/
+.dbt/
