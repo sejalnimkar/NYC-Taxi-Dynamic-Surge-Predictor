@@ -36,7 +36,7 @@ flowchart LR
     I -.-> G
 ```
 
-![Architecture](images/architecture.png) <!-- optional: replace/supplement mermaid with a polished diagram -->
+<!-- optional: replace/supplement mermaid with a polished diagram -->
 
 ## Tech Stack
 
