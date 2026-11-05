@@ -123,4 +123,4 @@ Data: download FHVHV parquet files and the zone lookup from the [NYC TLC Trip Re
 - [Pick 2–3 real ones: e.g. weather/event features, multi-horizon models, serving the model via an API, a Tableau/Streamlit dashboard]
 
 ## Author
-**Sejal** · MS Data Science, Indiana University Bloomington · [LinkedIn](#)
+**Sejal**  · [LinkedIn](www.linkedin.com/in/sejalnimkar)
