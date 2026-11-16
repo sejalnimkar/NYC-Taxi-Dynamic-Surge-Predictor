@@ -1,0 +1,382 @@
+{
+  "meta": {
+    "source": "duckdb",
+    "train_start": "2026-01-01 00:00:00",
+    "train_end": "2026-01-25 18:00:00",
+    "val_end": "2026-01-31 23:00:00",
+    "holdout_start": "2026-02-01 00:00:00",
+    "holdout_end": "2026-02-28 23:00:00",
+    "holdout_rows": 178080,
+    "n_trials": 0
+  },
+  "metrics": [
+    {
+      "horizon_h": 1,
+      "method": "baseline: persistence",
+      "val_rmse": 35.52569407978648,
+      "val_mae": 21.225908572875774,
+      "val_wape": 0.190763861195935,
+      "holdout_rmse": 37.278998071497774,
+      "holdout_mae": 21.62630278526505,
+      "holdout_wape": 0.1938484125438941
+    },
+    {
+      "horizon_h": 1,
+      "method": "baseline: same_hour_yesterday",
+      "val_rmse": 78.08893164874777,
+      "val_mae": 37.42233759655566,
+      "val_wape": 0.3363262208723235,
+      "holdout_rmse": 64.91405118216319,
+      "holdout_mae": 30.764150943396228,
+      "holdout_wape": 0.275755957125568
+    },
+    {
+      "horizon_h": 1,
+      "method": "baseline: same_hour_last_week",
+      "val_rmse": 51.58477815909637,
+      "val_mae": 26.932100797771305,
+      "val_wape": 0.24204719061431926,
+      "holdout_rmse": 50.070370011163355,
+      "holdout_mae": 24.620356019766398,
+      "holdout_wape": 0.22068575373637223
+    },
+    {
+      "horizon_h": 1,
+      "method": "lightgbm: recent",
+      "val_rmse": 25.892963790420946,
+      "val_mae": 15.002980219969205,
+      "val_wape": 0.13483646301317337,
+      "holdout_rmse": 26.150132171340005,
+      "holdout_mae": 14.695697111634408,
+      "holdout_wape": 0.1317255928857701
+    },
+    {
+      "horizon_h": 1,
+      "method": "lightgbm: recent_plus_seasonal",
+      "val_rmse": 22.098018904556668,
+      "val_mae": 13.055003486312184,
+      "val_wape": 0.11732938848882887,
+      "holdout_rmse": 24.9865987726053,
+      "holdout_mae": 13.857849418149561,
+      "holdout_wape": 0.12421550450181101
+    },
+    {
+      "horizon_h": 2,
+      "method": "baseline: persistence",
+      "val_rmse": 58.071032599305056,
+      "val_mae": 34.2837786501203,
+      "val_wape": 0.3081190126316288,
+      "holdout_rmse": 60.077606621647675,
+      "holdout_mae": 34.65473382749326,
+      "holdout_wape": 0.31062938525802314
+    },
+    {
+      "horizon_h": 2,
+      "method": "baseline: same_hour_yesterday",
+      "val_rmse": 78.08893164874777,
+      "val_mae": 37.42233759655566,
+      "val_wape": 0.3363262208723235,
+      "holdout_rmse": 64.91405118216319,
+      "holdout_mae": 30.764150943396228,
+      "holdout_wape": 0.275755957125568
+    },
+    {
+      "horizon_h": 2,
+      "method": "baseline: same_hour_last_week",
+      "val_rmse": 51.58477815909637,
+      "val_mae": 26.932100797771305,
+      "val_wape": 0.24204719061431926,
+      "holdout_rmse": 50.070370011163355,
+      "holdout_mae": 24.620356019766398,
+      "holdout_wape": 0.22068575373637223
+    },
+    {
+      "horizon_h": 2,
+      "method": "lightgbm: recent",
+      "val_rmse": 34.31607954380824,
+      "val_mae": 19.54098141379589,
+      "val_wape": 0.17562089524955768,
+      "holdout_rmse": 33.98827373631889,
+      "holdout_mae": 18.77397848317257,
+      "holdout_wape": 0.16828146550208511
+    },
+    {
+      "horizon_h": 2,
+      "method": "lightgbm: recent_plus_seasonal",
+      "val_rmse": 27.973377191338667,
+      "val_mae": 16.02301423090604,
+      "val_wape": 0.1440038268416478,
+      "holdout_rmse": 32.001832561633016,
+      "holdout_mae": 17.249506870446535,
+      "holdout_wape": 0.15461679035953046
+    },
+    {
+      "horizon_h": 3,
+      "method": "baseline: persistence",
+      "val_rmse": 76.51509959478422,
+      "val_mae": 45.576750664809424,
+      "val_wape": 0.4096124746666375,
+      "holdout_rmse": 78.41046084942968,
+      "holdout_mae": 45.58268194070081,
+      "holdout_wape": 0.4085825774953325
+    },
+    {
+      "horizon_h": 3,
+      "method": "baseline: same_hour_yesterday",
+      "val_rmse": 78.08893164874777,
+      "val_mae": 37.42233759655566,
+      "val_wape": 0.3363262208723235,
+      "holdout_rmse": 64.91405118216319,
+      "holdout_mae": 30.764150943396228,
+      "holdout_wape": 0.275755957125568
+    },
+    {
+      "horizon_h": 3,
+      "method": "baseline: same_hour_last_week",
+      "val_rmse": 51.58477815909637,
+      "val_mae": 26.932100797771305,
+      "val_wape": 0.24204719061431926,
+      "holdout_rmse": 50.070370011163355,
+      "holdout_mae": 24.620356019766398,
+      "holdout_wape": 0.22068575373637223
+    },
+    {
+      "horizon_h": 3,
+      "method": "lightgbm: recent",
+      "val_rmse": 39.71145496804668,
+      "val_mae": 22.545658995047127,
+      "val_wape": 0.20262486990065037,
+      "holdout_rmse": 39.16389202200102,
+      "holdout_mae": 21.437508802113502,
+      "holdout_wape": 0.19215614853117058
+    },
+    {
+      "horizon_h": 3,
+      "method": "lightgbm: recent_plus_seasonal",
+      "val_rmse": 33.91768738864304,
+      "val_mae": 17.999296455337397,
+      "val_wape": 0.1617652916407181,
+      "holdout_rmse": 36.91599478267408,
+      "holdout_mae": 19.123103808852797,
+      "holdout_wape": 0.17141086726964447
+    }
+  ],
+  "holdout_by_borough": [
+    {
+      "horizon_h": 1,
+      "borough": "Manhattan",
+      "rows": 46368,
+      "mean_actual": 149.11369910282954,
+      "rmse": 28.278771941437224,
+      "mae": 17.515576507034176,
+      "wape": 0.11746456973718658
+    },
+    {
+      "horizon_h": 1,
+      "borough": "Queens",
+      "rows": 46368,
+      "mean_actual": 93.6532306763285,
+      "rmse": 27.480118600850698,
+      "mae": 12.68377141640655,
+      "wape": 0.13543335691474934
+    },
+    {
+      "horizon_h": 1,
+      "borough": "Brooklyn",
+      "rows": 40992,
+      "mean_actual": 137.01571038251367,
+      "rmse": 27.549328213294,
+      "mae": 16.768250828086586,
+      "wape": 0.12238195737754318
+    },
+    {
+      "horizon_h": 1,
+      "borough": "Bronx",
+      "rows": 28896,
+      "mean_actual": 92.0843715393134,
+      "rmse": 15.921939223562589,
+      "mae": 10.923612245712208,
+      "wape": 0.11862612583557257
+    },
+    {
+      "horizon_h": 1,
+      "borough": "Staten Island",
+      "rows": 13440,
+      "mean_actual": 24.709895833333334,
+      "rmse": 6.9385206607397505,
+      "mae": 4.711764869792478,
+      "wape": 0.1906833157684286
+    },
+    {
+      "horizon_h": 1,
+      "borough": "EWR",
+      "rows": 672,
+      "mean_actual": 0.001488095238095238,
+      "rmse": 0.5335549998333912,
+      "mae": 0.35494442090264045,
+      "wape": 238.52265084657438
+    },
+    {
+      "horizon_h": 1,
+      "borough": "N/A",
+      "rows": 672,
+      "mean_actual": 1.4806547619047619,
+      "rmse": 1.3932926636404104,
+      "mae": 1.0507633712080071,
+      "wape": 0.7096612919113374
+    },
+    {
+      "horizon_h": 1,
+      "borough": "Unknown",
+      "rows": 672,
+      "mean_actual": 0.0,
+      "rmse": 0.533507647579913,
+      "mae": 0.3554568253566173,
+      "wape": NaN
+    },
+    {
+      "horizon_h": 2,
+      "borough": "Manhattan",
+      "rows": 46368,
+      "mean_actual": 149.11369910282954,
+      "rmse": 36.60145534001139,
+      "mae": 22.328272998563733,
+      "wape": 0.14973991747844742
+    },
+    {
+      "horizon_h": 2,
+      "borough": "Queens",
+      "rows": 46368,
+      "mean_actual": 93.6532306763285,
+      "rmse": 34.33167126906274,
+      "mae": 15.426157983488055,
+      "wape": 0.16471570571656874
+    },
+    {
+      "horizon_h": 2,
+      "borough": "Brooklyn",
+      "rows": 40992,
+      "mean_actual": 137.01571038251367,
+      "rmse": 35.765036691828946,
+      "mae": 21.197457742479983,
+      "wape": 0.1547082278616224
+    },
+    {
+      "horizon_h": 2,
+      "borough": "Bronx",
+      "rows": 28896,
+      "mean_actual": 92.0843715393134,
+      "rmse": 20.654416787543553,
+      "mae": 13.195875641757748,
+      "wape": 0.143302011200935
+    },
+    {
+      "horizon_h": 2,
+      "borough": "Staten Island",
+      "rows": 13440,
+      "mean_actual": 24.709895833333334,
+      "rmse": 7.91075263309663,
+      "mae": 5.173260811333078,
+      "wape": 0.2093598793870436
+    },
+    {
+      "horizon_h": 2,
+      "borough": "EWR",
+      "rows": 672,
+      "mean_actual": 0.001488095238095238,
+      "rmse": 0.704894644508655,
+      "mae": 0.488184203404944,
+      "wape": 328.05978468812236
+    },
+    {
+      "horizon_h": 2,
+      "borough": "N/A",
+      "rows": 672,
+      "mean_actual": 1.4806547619047619,
+      "rmse": 1.5113641830407194,
+      "mae": 1.1541696164773352,
+      "wape": 0.779499479671125
+    },
+    {
+      "horizon_h": 2,
+      "borough": "Unknown",
+      "rows": 672,
+      "mean_actual": 0.0,
+      "rmse": 0.7044025328353523,
+      "mae": 0.48843797335281824,
+      "wape": NaN
+    },
+    {
+      "horizon_h": 3,
+      "borough": "Manhattan",
+      "rows": 46368,
+      "mean_actual": 149.11369910282954,
+      "rmse": 41.81602866381769,
+      "mae": 25.009026381032974,
+      "wape": 0.16771783230853007
+    },
+    {
+      "horizon_h": 3,
+      "borough": "Queens",
+      "rows": 46368,
+      "mean_actual": 93.6532306763285,
+      "rmse": 40.641295043069604,
+      "mae": 17.062910793055007,
+      "wape": 0.1821924419460286
+    },
+    {
+      "horizon_h": 3,
+      "borough": "Brooklyn",
+      "rows": 40992,
+      "mean_actual": 137.01571038251367,
+      "rmse": 40.89895110514339,
+      "mae": 23.620333850583574,
+      "wape": 0.17239142711913472
+    },
+    {
+      "horizon_h": 3,
+      "borough": "Bronx",
+      "rows": 28896,
+      "mean_actual": 92.0843715393134,
+      "rmse": 23.09868055585766,
+      "mae": 14.20652699334661,
+      "wape": 0.154277286751981
+    },
+    {
+      "horizon_h": 3,
+      "borough": "Staten Island",
+      "rows": 13440,
+      "mean_actual": 24.709895833333334,
+      "rmse": 8.763865230775716,
+      "mae": 5.5263420632537406,
+      "wape": 0.2236489421294434
+    },
+    {
+      "horizon_h": 3,
+      "borough": "EWR",
+      "rows": 672,
+      "mean_actual": 0.001488095238095238,
+      "rmse": 0.8977183256789053,
+      "mae": 0.5957974206133194,
+      "wape": 400.37586665215065
+    },
+    {
+      "horizon_h": 3,
+      "borough": "N/A",
+      "rows": 672,
+      "mean_actual": 1.4806547619047619,
+      "rmse": 1.6315092894394545,
+      "mae": 1.219133354825507,
+      "wape": 0.8233744868771264
+    },
+    {
+      "horizon_h": 3,
+      "borough": "Unknown",
+      "rows": 672,
+      "mean_actual": 0.0,
+      "rmse": 0.8973305067119721,
+      "mae": 0.596046693905206,
+      "wape": NaN
+    }
+  ]
+}

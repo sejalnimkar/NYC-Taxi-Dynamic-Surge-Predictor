@@ -29,7 +29,18 @@ From the exploration notebook (`notebooks/Model_Training.ipynb`):
 `src/train.py` trains one model per horizon and scores each on February against three model-free baselines (latest visible hour, same hour yesterday, same hour last week), reporting RMSE, MAE and WAPE overall and by borough. Each horizon only uses features that would exist at forecast time (see [Feature engineering](#3-feature-engineering-dbt)).
 
 <!-- RESULTS:START -->
-_Not yet run on the full dataset. Running the pipeline writes the table to [`reports/holdout_metrics.md`](reports/holdout_metrics.md)._
+February 2026, never seen in training or tuning: 178,080 zone-hours (265 zones x 672 hours). RMSE in trips per zone per hour.
+
+| Horizon | Best baseline (RMSE) | LightGBM, recent features | LightGBM + daily/weekly lags | Improvement vs. best baseline | WAPE |
+|---|---|---|---|---|---|
+| 1h | 37.28 (persistence) | 26.15 | **24.99** | 33% | 12.4% |
+| 2h | 50.07 (same hour last week) | 33.99 | **32.00** | 36% | 15.5% |
+| 3h | 50.07 (same hour last week) | 39.16 | **36.92** | 26% | 17.1% |
+
+- The "best baseline" is the strongest of three model-free forecasts at that horizon: the latest visible hour, the same hour yesterday, or the same hour last week.
+- WAPE is total absolute error divided by total demand, for the model in bold.
+- Adding the daily and weekly lags helped more on the January validation week than on February (15-18% vs. 4-6% lower RMSE, depending on horizon), so treat the size of that gain with caution.
+- Full table with MAE and a per-borough breakdown: [`reports/holdout_metrics.md`](reports/holdout_metrics.md). These numbers were produced by `src/train.py` on the real hourly aggregates using the DuckDB target.
 <!-- RESULTS:END -->
 
 ![MLflow comparison](images/mlflow_runs.png)

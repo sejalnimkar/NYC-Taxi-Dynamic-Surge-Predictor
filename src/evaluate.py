@@ -54,8 +54,15 @@ def split_by_time(df: pd.DataFrame, holdout_start, val_fraction: float = 0.2, ts
 
 
 def metrics_by_group(df: pd.DataFrame, group_col: str, y_col: str, pred_col: str) -> pd.DataFrame:
-    """Error metrics per group (e.g. per borough), with row counts."""
+    """Error metrics per group (e.g. per borough), with row counts and mean demand."""
     rows = []
     for key, part in df.groupby(group_col):
-        rows.append({group_col: key, "rows": len(part), **regression_metrics(part[y_col], part[pred_col])})
+        rows.append(
+            {
+                group_col: key,
+                "rows": len(part),
+                "mean_actual": float(part[y_col].mean()),
+                **regression_metrics(part[y_col], part[pred_col]),
+            }
+        )
     return pd.DataFrame(rows).sort_values("rows", ascending=False).reset_index(drop=True)

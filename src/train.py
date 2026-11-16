@@ -204,12 +204,15 @@ def write_reports(metrics: pd.DataFrame, boroughs: pd.DataFrame, meta: dict) -> 
         "",
         "## LightGBM (recent + seasonal) by borough, holdout",
         "",
-        "| Horizon | Borough | Zone-hours | RMSE | MAE | WAPE |",
-        "|---|---|---|---|---|---|",
+        "| Horizon | Borough | Zone-hours | Mean trips/zone-hour | RMSE | MAE | WAPE |",
+        "|---|---|---|---|---|---|---|",
     ]
     for r in boroughs.itertuples():
-        wape = "n/a" if pd.isna(r.wape) else f"{r.wape:.1%}"
-        lines.append(f"| {r.horizon_h}h | {r.borough} | {r.rows:,} | {r.rmse:.2f} | {r.mae:.2f} | {wape} |")
+        # A percentage error is meaningless where there is almost no demand (e.g. Newark Airport).
+        wape = "n/a" if pd.isna(r.wape) or r.mean_actual < 1 else f"{r.wape:.1%}"
+        lines.append(
+            f"| {r.horizon_h}h | {r.borough} | {r.rows:,} | {r.mean_actual:.1f} | {r.rmse:.2f} | {r.mae:.2f} | {wape} |"
+        )
     (REPORTS_DIR / "holdout_metrics.md").write_text("\n".join(lines) + "\n")
 
 
