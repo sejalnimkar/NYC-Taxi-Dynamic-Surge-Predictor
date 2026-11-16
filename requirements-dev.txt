@@ -5,6 +5,7 @@ dbt-core==1.12.7
 dbt-duckdb==1.11.1
 pyspark==4.3.0
 lightgbm==4.7.0
+scikit-learn==1.9.1  # required by LightGBM's LGBMRegressor
 pandas==3.0.5
 numpy==2.5.3
 pyarrow==26.0.1
