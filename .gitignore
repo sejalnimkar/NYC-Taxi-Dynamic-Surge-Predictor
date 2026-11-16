@@ -5,10 +5,21 @@ data/*.csv
 data/*.jpg
 data/__pycache__/
 data/.ipynb_checkpoints/
-notebooks/.ipynb_checkpoints/
+**/.ipynb_checkpoints/
 shapefile/
 *.DS_Store
 __pycache__/
+.pytest_cache/
+.ruff_cache/
 mlruns/
 logs/
-.dbt/
+# Local DuckDB warehouse used by `make demo` and CI
+*.duckdb
+*.duckdb.wal
+# dbt build output
+nyc_surge_predictor/target/
+nyc_surge_predictor/dbt_packages/
+nyc_surge_predictor/logs/
+# Office lock files
+~$*
+.dbt/.user.yml

@@ -1,0 +1,26 @@
+# dbt connection profiles. No secrets live here: Snowflake credentials are
+# read from environment variables (see .env.example).
+#
+#   dev  - Snowflake, the real warehouse (default target)
+#   ci   - a local DuckDB file, used by `make demo` and GitHub Actions so the
+#          whole dbt project can be built and tested without a Snowflake account
+nyc_surge_predictor:
+  target: dev
+  outputs:
+    dev:
+      type: snowflake
+      account: "{{ env_var('SNOWFLAKE_ACCOUNT', '') }}"
+      user: "{{ env_var('SNOWFLAKE_USER', '') }}"
+      password: "{{ env_var('SNOWFLAKE_PASSWORD', '') }}"
+      role: "{{ env_var('SNOWFLAKE_ROLE', 'ACCOUNTADMIN') }}"
+      database: "{{ env_var('SNOWFLAKE_DATABASE', 'nyc_taxi') }}"
+      warehouse: "{{ env_var('SNOWFLAKE_WAREHOUSE', 'compute_wh') }}"
+      schema: "{{ env_var('SNOWFLAKE_SCHEMA', 'surge_predictor') }}"
+      threads: 4
+    ci:
+      type: duckdb
+      # The file name sets the DuckDB catalog name, so sources resolve to
+      # nyc_taxi.surge_predictor.* exactly as they do in Snowflake.
+      path: "{{ env_var('DUCKDB_PATH', 'nyc_taxi.duckdb') }}"
+      schema: surge_predictor
+      threads: 4
