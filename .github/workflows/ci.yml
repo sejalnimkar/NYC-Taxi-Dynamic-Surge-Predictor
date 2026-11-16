@@ -1,0 +1,39 @@
+name: CI
+
+on:
+  push:
+    branches: [main, master]
+  pull_request:
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.13"
+          cache: pip
+          cache-dependency-path: requirements-dev.txt
+
+      # PySpark unit tests run Spark in local mode, which needs a JVM.
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: "17"
+
+      - name: Install dependencies
+        run: make install
+
+      - name: Lint and unit tests (PySpark transforms, feature rules, metrics, load SQL)
+        run: make test
+
+      - name: Build a synthetic warehouse in DuckDB
+        run: make fixture
+
+      - name: dbt build (models + data tests) on DuckDB
+        run: make dbt-ci
+
+      - name: Train and score all three horizons on the fixture
+        run: make train-ci
