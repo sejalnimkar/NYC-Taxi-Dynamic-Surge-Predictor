@@ -23,3 +23,9 @@ models:
   nyc_surge_predictor:
     staging:
       +materialized: view
+
+seeds:
+  nyc_surge_predictor:
+    holidays:
+      +column_types:
+        holiday_date: date

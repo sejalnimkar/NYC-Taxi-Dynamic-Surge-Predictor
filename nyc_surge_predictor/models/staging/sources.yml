@@ -6,4 +6,4 @@ sources:
     schema: surge_predictor
     tables:
       - name: fhvhv_trips
-        description: "Raw FHVHV trip records loaded from PySpark-cleaned parquet, Jan 2026"
+        description: "Raw FHVHV trip records loaded from PySpark-cleaned parquet"
