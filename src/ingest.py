@@ -19,15 +19,16 @@ container, e.g.:
 """
 
 import argparse
+import os
 import sys
 
 from pyspark.sql import SparkSession
 from pyspark.sql import functions as F
 from pyspark.sql.types import IntegerType
 
-
-DATA_DIR = "/home/jovyan/work/data"
-SPARK_MASTER = "spark://spark-master:7077"
+# Defaults match the Docker Compose stack; override via env vars to run elsewhere.
+DATA_DIR = os.getenv("DATA_DIR", "/home/jovyan/work/data")
+SPARK_MASTER = os.getenv("SPARK_MASTER", "spark://spark-master:7077")
 
 
 def get_spark_session() -> SparkSession:

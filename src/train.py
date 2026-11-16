@@ -1,182 +1,296 @@
 """
 src/train.py
 
-Pulls engineered features from Snowflake (fct_zone_features, built by dbt),
-tunes a LightGBM regressor with Optuna, logs runs to MLflow, and evaluates
-the tuned model on the held-out February data.
+Trains one LightGBM model per forecast horizon (1, 2 and 3 hours ahead) on
+fct_zone_features, and scores each against model-free baselines on a
+held-out period the models never saw.
 
-Extracted from notebooks/Model_Training.ipynb — the winning model path only
-(LightGBM, tuned). The GBDT/XGBoost/naive baselines that were compared
-during exploration are intentionally left out of the production script;
-they still live in the notebook for anyone who wants to see the comparison.
+For every horizon it reports, on the holdout:
+  - three baselines (persistence, same hour yesterday, same hour last week)
+  - LightGBM on the recent-demand features
+  - LightGBM with the daily/weekly seasonal lags added
+Results go to MLflow and to reports/metrics.json + reports/holdout_metrics.md.
 
 Usage:
-    python train.py
-    python train.py --n-trials 20
+    python src/train.py                               # Snowflake, default params
+    python src/train.py --n-trials 30                 # re-tune with Optuna first
+    python src/train.py --source duckdb --duckdb-path nyc_taxi.duckdb \
+        --holdout-start 2026-01-13 --no-mlflow        # local / CI run
 
-Called by Airflow's `train_model` task via docker exec, e.g.:
-    docker exec jupyter-notebook python /home/jovyan/work/src/train.py
+Called by Airflow's `train_model` task via docker exec.
 """
 
 import argparse
+import json
 import os
 import sys
+from pathlib import Path
 
-import mlflow
-import mlflow.lightgbm
-import numpy as np
-import optuna
-import pandas as pd
-import snowflake.connector
-from dotenv import load_dotenv
-from optuna.integration.mlflow import MLflowCallback
-from sklearn.metrics import mean_squared_error
 import lightgbm as lgb
+import pandas as pd
 
-os.environ["GIT_PYTHON_REFRESH"] = "quiet"
+sys.path.insert(0, str(Path(__file__).resolve().parent))
 
-MLFLOW_TRACKING_URI = "http://mlflow:5000"
+from evaluate import metrics_by_group, regression_metrics, split_by_time  # noqa: E402
+from features import FEATURE_SETS, HORIZONS, TARGET, baseline_columns, feature_columns  # noqa: E402
+
+REPO_ROOT = Path(__file__).resolve().parent.parent
+ZONE_LOOKUP = REPO_ROOT / "nyc_surge_predictor" / "seeds" / "taxi_zone_lookup.csv"
+REPORTS_DIR = REPO_ROOT / "reports"
+
 EXPERIMENT_NAME = "nyc_surge_gbdt"
+DEFAULT_HOLDOUT_START = "2026-02-01"
 
-FEATURES = [
-    "PICKUP_LAG_1H", "PICKUP_LAG_2H", "PICKUP_LAG_3H",
-    "ROLLING_AVG_3H", "ROLLING_AVG_24H",
-    "DAY_OF_WEEK", "IS_WEEKEND", "HOUR_OF_DAY", "IS_HOLIDAY",
-]
-TARGET = "PICKUP_COUNT"
+# Best of the 90-trial Optuna study in notebooks/Model_Training.ipynb.
+# Used as-is unless --n-trials asks for a fresh search.
+DEFAULT_PARAMS = {
+    "n_estimators": 400,
+    "learning_rate": 0.0481,
+    "max_depth": 8,
+    "num_leaves": 98,
+}
+FIXED_PARAMS = {"random_state": 42, "verbose": -1}
 
-FEB_SPLIT = "2026-02-01"
 
+# ── Data access ──────────────────────────────────────────────────────────────
+def fetch_features_snowflake() -> pd.DataFrame:
+    import snowflake.connector
+    from dotenv import load_dotenv
 
-def get_snowflake_cursor():
     load_dotenv()
     conn = snowflake.connector.connect(
         account=os.getenv("SNOWFLAKE_ACCOUNT"),
         user=os.getenv("SNOWFLAKE_USER"),
         password=os.getenv("SNOWFLAKE_PASSWORD"),
-        warehouse="compute_wh",
-        database="nyc_taxi",
-        schema="surge_predictor",
+        warehouse=os.getenv("SNOWFLAKE_WAREHOUSE", "compute_wh"),
+        database=os.getenv("SNOWFLAKE_DATABASE", "nyc_taxi"),
+        schema=os.getenv("SNOWFLAKE_SCHEMA", "surge_predictor"),
     )
-    return conn.cursor()
+    try:
+        cs = conn.cursor()
+        # dbt creates the table with a quoted lowercase name, hence the quotes.
+        cs.execute('SELECT * FROM "fct_zone_features"')
+        cols = [c[0] for c in cs.description]
+        return pd.DataFrame(cs.fetchall(), columns=cols)
+    finally:
+        conn.close()
 
 
-def fetch_features(cs, where_clause: str = "") -> pd.DataFrame:
-    query = f'SELECT * FROM "fct_zone_features" {where_clause} ORDER BY ZONE_ID, PICKUP_HOUR_TS;'
-    cs.execute(query)
-    cols = [c[0] for c in cs.description]
-    df = pd.DataFrame(cs.fetchall(), columns=cols)
-    for col in ["ROLLING_AVG_3H", "ROLLING_AVG_24H"]:
-        df[col] = df[col].astype(float)
-    return df
+def fetch_features_duckdb(path: str) -> pd.DataFrame:
+    import duckdb
+
+    con = duckdb.connect(path, read_only=True)
+    try:
+        return con.execute("select * from surge_predictor.fct_zone_features").df()
+    finally:
+        con.close()
 
 
-def time_split(df_jan: pd.DataFrame):
-    """80/20 time-based split within January; Feb is never seen here."""
-    split_time = df_jan["PICKUP_HOUR_TS"].quantile(0.8)
-    train = df_jan[df_jan["PICKUP_HOUR_TS"] <= split_time]
-    val = df_jan[df_jan["PICKUP_HOUR_TS"] > split_time]
-    return train, val
+def prepare(df: pd.DataFrame) -> pd.DataFrame:
+    """Normalise names/types so the rest of the script is warehouse-agnostic."""
+    df = df.rename(columns=str.lower)
+    df["pickup_hour_ts"] = pd.to_datetime(df["pickup_hour_ts"])
+    numeric = [c for c in df.columns if c not in ("pickup_hour_ts",)]
+    df[numeric] = df[numeric].apply(pd.to_numeric)  # Snowflake returns Decimals
+    return df.sort_values(["zone_id", "pickup_hour_ts"]).reset_index(drop=True)
 
 
-def tune(X_train, y_train, X_val, y_val, n_trials: int) -> dict:
-    mlflc = MLflowCallback(tracking_uri=MLFLOW_TRACKING_URI, metric_name="rmse")
+# ── Modelling ────────────────────────────────────────────────────────────────
+def fit_model(train: pd.DataFrame, columns: list[str], params: dict) -> lgb.LGBMRegressor:
+    model = lgb.LGBMRegressor(**params, **FIXED_PARAMS)
+    model.fit(train[columns], train[TARGET])
+    return model
 
-    @mlflc.track_in_mlflow()
+
+def tune(train: pd.DataFrame, val: pd.DataFrame, columns: list[str], n_trials: int) -> dict:
+    """Optuna search scored on the validation slice (never on the holdout)."""
+    import optuna
+
     def objective(trial):
         params = {
             "n_estimators": trial.suggest_int("n_estimators", 100, 500, step=50),
             "learning_rate": trial.suggest_float("learning_rate", 0.01, 0.2, log=True),
             "max_depth": trial.suggest_int("max_depth", 3, 10),
             "num_leaves": trial.suggest_int("num_leaves", 20, 100),
-            "random_state": 42,
-            "verbose": -1,
         }
-        model = lgb.LGBMRegressor(**params)
-        model.fit(X_train, y_train)
-        preds = model.predict(X_val)
-        return np.sqrt(mean_squared_error(y_val, preds))
+        model = fit_model(train, columns, params)
+        return regression_metrics(val[TARGET], model.predict(val[columns]))["rmse"]
 
     study = optuna.create_study(direction="minimize", study_name="lightgbm_tuning")
-    study.optimize(objective, n_trials=n_trials, callbacks=[mlflc])
-
-    print("Best RMSE:", study.best_value)
-    print("Best params:", study.best_params)
+    study.optimize(objective, n_trials=n_trials)
+    print(f"Optuna best validation RMSE: {study.best_value:.3f} with {study.best_params}")
     return study.best_params
 
 
-def train_final_model(X_train, y_train, X_val, y_val, best_params: dict):
-    final_params = {**best_params, "random_state": 42, "verbose": -1}
+def evaluate_horizon(horizon: int, train, val, holdout, params: dict) -> tuple[list[dict], pd.DataFrame, dict]:
+    """Score baselines and both feature sets for one horizon.
 
-    with mlflow.start_run(run_name="lightgbm_tuned_final"):
-        model = lgb.LGBMRegressor(**final_params)
-        model.fit(X_train, y_train)
-        preds = model.predict(X_val)
-        rmse = np.sqrt(mean_squared_error(y_val, preds))
+    Returns the metric rows, the holdout predictions and the fitted models.
+    """
+    # Every method is scored on the same rows: those where all inputs exist.
+    needed = feature_columns(horizon, "recent_plus_seasonal")
+    val = val.dropna(subset=needed)
+    holdout = holdout.dropna(subset=needed)
+    train_rows = train.dropna(subset=feature_columns(horizon, "recent"))
 
-        mlflow.log_params({"model": "lightgbm_tuned", **final_params})
-        mlflow.log_metric("rmse", rmse)
-        mlflow.lightgbm.log_model(model, "model")
+    rows = []
+    for name, col in baseline_columns(horizon).items():
+        rows.append(
+            {
+                "horizon_h": horizon,
+                "method": f"baseline: {name}",
+                **{f"val_{k}": v for k, v in regression_metrics(val[TARGET], val[col]).items()},
+                **{f"holdout_{k}": v for k, v in regression_metrics(holdout[TARGET], holdout[col]).items()},
+            }
+        )
 
-        print("Final tuned RMSE (Jan validation):", rmse)
-
-    return model
-
-
-def evaluate_on_february(model, cs) -> float:
-    df_feb_eval = fetch_features(cs, where_clause=f"WHERE PICKUP_HOUR_TS >= '{FEB_SPLIT}'")
-    print(f"Feb holdout shape: {df_feb_eval.shape}")
-
-    X_feb = df_feb_eval[FEATURES]
-    y_feb = df_feb_eval[TARGET]
-
-    feb_preds = model.predict(X_feb)
-    feb_rmse = np.sqrt(mean_squared_error(y_feb, feb_preds))
-    print("Feb (out-of-sample) RMSE:", feb_rmse)
-
-    with mlflow.start_run(run_name="lightgbm_tuned_feb_eval"):
-        mlflow.log_param("eval_set", "february_holdout")
-        mlflow.log_metric("rmse", feb_rmse)
-
-    return feb_rmse
+    predictions = holdout[["zone_id", "pickup_hour_ts", TARGET]].copy()
+    predictions["horizon_h"] = horizon
+    models = {}
+    for feature_set in FEATURE_SETS:
+        columns = feature_columns(horizon, feature_set)
+        model = fit_model(train_rows, columns, params)
+        holdout_pred = model.predict(holdout[columns])
+        rows.append(
+            {
+                "horizon_h": horizon,
+                "method": f"lightgbm: {feature_set}",
+                **{f"val_{k}": v for k, v in regression_metrics(val[TARGET], model.predict(val[columns])).items()},
+                **{f"holdout_{k}": v for k, v in regression_metrics(holdout[TARGET], holdout_pred).items()},
+            }
+        )
+        predictions[f"pred_{feature_set}"] = holdout_pred
+        models[feature_set] = model
+    return rows, predictions, models
 
 
-def run(n_trials: int):
-    mlflow.set_tracking_uri(MLFLOW_TRACKING_URI)
+def borough_breakdown(predictions: pd.DataFrame) -> pd.DataFrame:
+    zones = pd.read_csv(ZONE_LOOKUP, keep_default_na=False)
+    zones = zones.rename(columns={"LocationID": "zone_id", "Borough": "borough"})
+    merged = predictions.merge(zones[["zone_id", "borough"]], on="zone_id", how="left")
+    parts = []
+    for horizon, part in merged.groupby("horizon_h"):
+        by = metrics_by_group(part, "borough", TARGET, "pred_recent_plus_seasonal")
+        by.insert(0, "horizon_h", horizon)
+        parts.append(by)
+    return pd.concat(parts, ignore_index=True)
+
+
+# ── Reporting ────────────────────────────────────────────────────────────────
+def write_reports(metrics: pd.DataFrame, boroughs: pd.DataFrame, meta: dict) -> None:
+    REPORTS_DIR.mkdir(exist_ok=True)
+    payload = {
+        "meta": meta,
+        "metrics": metrics.to_dict(orient="records"),
+        "holdout_by_borough": boroughs.to_dict(orient="records"),
+    }
+    (REPORTS_DIR / "metrics.json").write_text(json.dumps(payload, indent=2, default=str))
+
+    lines = [
+        "# Holdout results",
+        "",
+        f"Source: `{meta['source']}`. Train {meta['train_start']} to {meta['train_end']}, "
+        f"validation to {meta['val_end']}, holdout {meta['holdout_start']} to {meta['holdout_end']} "
+        f"({meta['holdout_rows']:,} zone-hours).",
+        "",
+        "| Horizon | Method | Holdout RMSE | Holdout MAE | Holdout WAPE |",
+        "|---|---|---|---|---|",
+    ]
+    for r in metrics.itertuples():
+        lines.append(
+            f"| {r.horizon_h}h | {r.method} | {r.holdout_rmse:.2f} | {r.holdout_mae:.2f} | {r.holdout_wape:.1%} |"
+        )
+    lines += [
+        "",
+        "## LightGBM (recent + seasonal) by borough, holdout",
+        "",
+        "| Horizon | Borough | Zone-hours | RMSE | MAE | WAPE |",
+        "|---|---|---|---|---|---|",
+    ]
+    for r in boroughs.itertuples():
+        wape = "n/a" if pd.isna(r.wape) else f"{r.wape:.1%}"
+        lines.append(f"| {r.horizon_h}h | {r.borough} | {r.rows:,} | {r.rmse:.2f} | {r.mae:.2f} | {wape} |")
+    (REPORTS_DIR / "holdout_metrics.md").write_text("\n".join(lines) + "\n")
+
+
+def log_to_mlflow(metrics: pd.DataFrame, models: dict, params: dict, meta: dict) -> None:
+    import mlflow
+    import mlflow.lightgbm
+
+    os.environ.setdefault("GIT_PYTHON_REFRESH", "quiet")
+    mlflow.set_tracking_uri(os.getenv("MLFLOW_TRACKING_URI", "http://mlflow:5000"))
     mlflow.set_experiment(EXPERIMENT_NAME)
+    for r in metrics.to_dict(orient="records"):
+        run_name = f"h{r['horizon_h']}_{r['method'].replace(': ', '_')}"
+        with mlflow.start_run(run_name=run_name):
+            mlflow.log_params({"horizon_h": r["horizon_h"], "method": r["method"], **meta})
+            mlflow.log_metrics({k: v for k, v in r.items() if k.startswith(("val_", "holdout_"))})
+            if r["method"].startswith("lightgbm"):
+                mlflow.log_params(params)
+                feature_set = r["method"].split(": ")[1]
+                mlflow.lightgbm.log_model(models[(r["horizon_h"], feature_set)], "model")
 
-    cs = get_snowflake_cursor()
 
-    df = fetch_features(cs)
-    df_jan = df[df["PICKUP_HOUR_TS"] < FEB_SPLIT].copy()
-    print(f"Jan rows: {df_jan.shape}")
-
-    train, val = time_split(df_jan)
-    X_train, y_train = train[FEATURES], train[TARGET]
-    X_val, y_val = val[FEATURES], val[TARGET]
-
-    best_params = tune(X_train, y_train, X_val, y_val, n_trials=n_trials)
-    model = train_final_model(X_train, y_train, X_val, y_val, best_params)
-    feb_rmse = evaluate_on_february(model, cs)
-
-    # Fail the task if the model is clearly broken, rather than silently
-    # logging a bad run as if it were fine.
-    if feb_rmse is None or feb_rmse != feb_rmse:  # NaN check without numpy import here
-        print("ERROR: Feb evaluation RMSE is invalid — failing task.", file=sys.stderr)
+# ── Entry point ──────────────────────────────────────────────────────────────
+def run(source: str, duckdb_path: str, holdout_start: str, n_trials: int, use_mlflow: bool) -> pd.DataFrame:
+    raw = fetch_features_snowflake() if source == "snowflake" else fetch_features_duckdb(duckdb_path)
+    df = prepare(raw)
+    train, val, holdout = split_by_time(df, holdout_start)
+    if holdout.empty:
+        print(f"ERROR: no rows on or after holdout start {holdout_start}.", file=sys.stderr)
         sys.exit(1)
+    print(f"Rows  train: {len(train):,}  val: {len(val):,}  holdout: {len(holdout):,}")
+
+    params = dict(DEFAULT_PARAMS)
+    if n_trials > 0:
+        params = tune(train.dropna(subset=feature_columns(1)), val, feature_columns(1), n_trials)
+
+    all_rows, all_predictions, all_models = [], [], {}
+    for horizon in HORIZONS:
+        rows, predictions, models = evaluate_horizon(horizon, train, val, holdout, params)
+        all_rows += rows
+        all_predictions.append(predictions)
+        all_models.update({(horizon, name): m for name, m in models.items()})
+
+    metrics = pd.DataFrame(all_rows)
+    predictions = pd.concat(all_predictions, ignore_index=True)
+    boroughs = borough_breakdown(predictions)
+    meta = {
+        "source": source,
+        "train_start": train["pickup_hour_ts"].min(),
+        "train_end": train["pickup_hour_ts"].max(),
+        "val_end": val["pickup_hour_ts"].max(),
+        "holdout_start": holdout["pickup_hour_ts"].min(),
+        "holdout_end": holdout["pickup_hour_ts"].max(),
+        "holdout_rows": int(len(holdout)),
+        "n_trials": n_trials,
+    }
+    write_reports(metrics, boroughs, meta)
+    summary_cols = ["horizon_h", "method", "val_rmse", "holdout_rmse", "holdout_mae", "holdout_wape"]
+    print(metrics[summary_cols].to_string(index=False))
+
+    if use_mlflow:
+        log_to_mlflow(metrics, all_models, params, {k: str(v) for k, v in meta.items()})
+
+    # Fail the task (and the DAG) if any score is not a real number.
+    if metrics.filter(like="holdout_rmse").isna().any().any():
+        print("ERROR: a holdout RMSE is NaN - failing task.", file=sys.stderr)
+        sys.exit(1)
+    return metrics
 
 
 def parse_args():
-    parser = argparse.ArgumentParser(description="Tune, train, and evaluate the surge-prediction model.")
-    parser.add_argument(
-        "--n-trials",
-        type=int,
-        default=30,
-        help="Number of Optuna trials for hyperparameter tuning (default: 30).",
-    )
+    parser = argparse.ArgumentParser(description="Train and evaluate 1-3 hour-ahead demand models.")
+    parser.add_argument("--source", choices=["snowflake", "duckdb"], default="snowflake")
+    parser.add_argument("--duckdb-path", default="nyc_taxi.duckdb")
+    parser.add_argument("--holdout-start", default=DEFAULT_HOLDOUT_START,
+                        help="First timestamp of the holdout period (default: 2026-02-01).")
+    parser.add_argument("--n-trials", type=int, default=0,
+                        help="Optuna trials. 0 (default) reuses the saved tuned parameters.")
+    parser.add_argument("--no-mlflow", action="store_true", help="Skip MLflow logging (used in CI).")
     return parser.parse_args()
 
 
 if __name__ == "__main__":
     args = parse_args()
-    run(args.n_trials)
+    run(args.source, args.duckdb_path, args.holdout_start, args.n_trials, not args.no_mlflow)
