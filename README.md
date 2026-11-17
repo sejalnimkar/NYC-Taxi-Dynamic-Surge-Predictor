@@ -40,7 +40,7 @@ February 2026, never seen in training or tuning: 178,080 zone-hours (265 zones x
 - The "best baseline" is the strongest of three model-free forecasts at that horizon: the latest visible hour, the same hour yesterday, or the same hour last week.
 - WAPE is total absolute error divided by total demand, for the model in bold.
 - Adding the daily and weekly lags helped more on the January validation week than on February (15-18% vs. 4-6% lower RMSE, depending on horizon), so treat the size of that gain with caution.
-- Full table with MAE and a per-borough breakdown: [`reports/holdout_metrics.md`](reports/holdout_metrics.md). These numbers were produced by `src/train.py` on the real hourly aggregates using the DuckDB target.
+- Full table with MAE and a per-borough breakdown: [`reports/holdout_metrics.md`](reports/holdout_metrics.md). These numbers come from `src/train.py` run on the real hourly aggregates through the DuckDB target. The full Snowflake pipeline, run end to end from Airflow, reproduced them to within 0.01 RMSE (24.99 / 32.00 / 36.92).
 <!-- RESULTS:END -->
 
 ![MLflow comparison](images/mlflow_runs.png)
