@@ -1,7 +1,7 @@
 version: 2
 models:
   - name: stg_fhvhv_trips
-    description: "Cleaned, typed FHVHV trip records for Jan 2026"
+    description: "Cleaned, typed FHVHV trip records"
     columns:
       - name: pickup_location_id
         description: "Zone ID where the trip started"

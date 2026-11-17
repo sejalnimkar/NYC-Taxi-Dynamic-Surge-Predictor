@@ -1,0 +1,52 @@
+version: 2
+
+models:
+  - name: int_hourly_zone_demand
+    description: "Pickups per zone per hour. Sparse: zone-hours with no trips have no row."
+    columns:
+      - name: zone_id
+        tests: [not_null]
+      - name: pickup_hour_ts
+        tests: [not_null]
+      - name: pickup_count
+        tests: [not_null]
+
+  - name: fct_zone_features
+    description: >
+      Model-ready table: one row per zone per hour on a zero-filled grid, with
+      the hourly pickup count (target) and leak-safe lag, rolling and calendar
+      features grouped by forecast horizon. See the model SQL for the rules.
+    columns:
+      - name: zone_id
+        description: "TLC taxi zone (1-265)"
+        tests:
+          - not_null
+          - relationships:
+              arguments:
+                to: ref('taxi_zone_lookup')
+                field: LocationID
+      - name: pickup_hour_ts
+        description: "Start of the hour being described / forecast"
+        tests: [not_null]
+      - name: pickup_count
+        description: "Pickups in this zone during this hour (0 if none). The target."
+        tests: [not_null]
+      - name: is_weekend
+        tests:
+          - accepted_values:
+              arguments:
+                values: [0, 1]
+      - name: is_holiday
+        tests:
+          - accepted_values:
+              arguments:
+                values: [0, 1]
+      - name: hour_of_day
+        tests: [not_null]
+
+seeds:
+  - name: holidays
+    description: "US federal holidays, joined on date to flag holiday hours."
+    columns:
+      - name: holiday_date
+        tests: [not_null, unique]

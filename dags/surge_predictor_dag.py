@@ -3,36 +3,41 @@ dags/surge_predictor_dag.py
 
 Orchestrates the NYC Surge Predictor pipeline end to end:
 
-    ingest (Jan + Feb)  ->  dbt run  ->  dbt test  ->  train_model
+    ingest_<month> -> load_<month>   (once per month, one after another)
+        -> dbt seed -> dbt run -> dbt test
+        -> train_model
 
 Design notes:
-- schedule=None: the underlying dataset is fixed to Jan/Feb 2026, so a
-  recurring schedule would be theater. Trigger manually from the UI or CLI.
-- Every task shells out via `docker exec` into the sibling containers that
-  already have the right environment (jupyter-notebook for PySpark/Snowflake/
-  MLflow, and the dbt project's container for dbt itself). This avoids
+- schedule=None: the dataset is a fixed set of months, so a recurring
+  schedule would be theater. Trigger manually from the UI or CLI. To add a
+  month, download its raw parquet into data/ and add it to MONTHS.
+- Every step is safe to re-run: ingest overwrites its output, load replaces
+  the month's rows in one transaction (see src/load.py), dbt rebuilds its
+  tables, and train only writes new MLflow runs.
+- Every task shells out via `docker exec` into the Jupyter container, which
+  already has PySpark, the Snowflake connector, dbt and MLflow. This avoids
   installing dbt-snowflake into the Airflow image, which broke pip's
   dependency resolver earlier (dbt-core's pins conflict with Airflow's).
 - SequentialExecutor + SQLite (see docker-compose.yml) means tasks run one
-  at a time regardless of the dependency graph — fine here since the graph
-  is linear anyway.
+  at a time, which also keeps two Spark jobs from competing for memory.
 """
 
-from datetime import datetime
+from datetime import datetime, timedelta
 
 from airflow import DAG
 from airflow.operators.bash import BashOperator
 from airflow.utils.task_group import TaskGroup
 
-# Container names as they appear in `docker compose ps` / docker-compose.yml.
-# There's no separate dbt container — dbt is installed inside the Jupyter
-# image and run from there, same as ingest.py/train.py.
+MONTHS = ["2026-01", "2026-02"]
+
 JUPYTER_CONTAINER = "jupyter-notebook"
-DBT_CONTAINER = JUPYTER_CONTAINER
-DBT_PROJECT_DIR_IN_CONTAINER = "/home/jovyan/work/nyc_surge_predictor"
+PYTHON = "/usr/bin/python3"
+SRC_DIR = "/home/jovyan/work/src"
+DBT_PROJECT_DIR = "/home/jovyan/work/nyc_surge_predictor"
 DBT_PROFILES_DIR = "/home/jovyan/work/.dbt"
 
-SRC_DIR_IN_JUPYTER = "/home/jovyan/work/src"
+EXEC = f"docker exec {JUPYTER_CONTAINER}"
+DBT_FLAGS = f"--project-dir {DBT_PROJECT_DIR} --profiles-dir {DBT_PROFILES_DIR}"
 
 default_args = {
     "owner": "sejal",
@@ -41,7 +46,7 @@ default_args = {
 
 with DAG(
     dag_id="surge_predictor_pipeline",
-    description="Ingest -> dbt build/test -> train the NYC Surge Predictor model",
+    description="Ingest -> load -> dbt build/test -> train the NYC Surge Predictor models",
     default_args=default_args,
     schedule=None,  # manual trigger only; see design notes above
     start_date=datetime(2026, 1, 1),
@@ -49,63 +54,62 @@ with DAG(
     tags=["nyc-taxi", "surge-predictor"],
 ) as dag:
 
-    ingest_task = BashOperator(
-        task_id="ingest",
-        bash_command=(
-            f"docker exec {JUPYTER_CONTAINER} /usr/bin/python3 {SRC_DIR_IN_JUPYTER}/ingest.py --month 2026-01 && "
-            f"docker exec {JUPYTER_CONTAINER} /usr/bin/python3 {SRC_DIR_IN_JUPYTER}/ingest.py --month 2026-02"
-        ),
-        retries=1,
-        retry_delay=120,  # seconds; Spark jobs are the most failure-prone step per earlier debugging
-        doc_md="""
-        ### Ingest
-        Runs `ingest.py` inside the Jupyter/Spark container for both January
-        and February 2026 raw FHVHV trip data: cleans, joins taxi zone
-        lookup info, adds derived time columns, and writes cleaned parquet
-        back to the shared data volume. Retries once on failure since Spark
-        jobs have been the flakiest step in this pipeline so far.
-        """,
-    )
+    previous = None
+    for month in MONTHS:
+        task_suffix = month.replace("-", "_")
+
+        ingest = BashOperator(
+            task_id=f"ingest_{task_suffix}",
+            bash_command=f"{EXEC} {PYTHON} {SRC_DIR}/ingest.py --month {month}",
+            retries=1,
+            retry_delay=timedelta(minutes=2),  # Spark is the flakiest step (OOM under tight Docker memory)
+            doc_md=f"Clean {month} FHVHV trips with PySpark and write cleaned parquet to the shared data volume.",
+        )
+
+        load = BashOperator(
+            task_id=f"load_{task_suffix}",
+            bash_command=f"{EXEC} {PYTHON} {SRC_DIR}/load.py --month {month}",
+            doc_md=f"Replace {month}'s rows in the raw Snowflake table with the cleaned parquet (idempotent).",
+        )
+
+        ingest >> load
+        if previous is not None:
+            previous >> ingest
+        previous = load
 
     with TaskGroup(group_id="dbt_build") as dbt_build:
 
-        dbt_run_task = BashOperator(
+        dbt_seed = BashOperator(
+            task_id="dbt_seed",
+            bash_command=f"{EXEC} dbt seed {DBT_FLAGS}",
+            doc_md="Load the zone lookup and holiday calendar seeds.",
+        )
+
+        dbt_run = BashOperator(
             task_id="dbt_run",
-            bash_command=(
-                f"docker exec {DBT_CONTAINER} "
-                f"dbt run --project-dir {DBT_PROJECT_DIR_IN_CONTAINER} --profiles-dir {DBT_PROFILES_DIR}"
-            ),
-            doc_md="""
-            ### dbt run
-            Builds the staging -> intermediate -> fct_zone_features models
-            in Snowflake from the cleaned trip data.
-            """,
+            bash_command=f"{EXEC} dbt run {DBT_FLAGS}",
+            doc_md="Build staging -> hourly demand -> fct_zone_features in Snowflake.",
         )
 
-        dbt_test_task = BashOperator(
+        dbt_test = BashOperator(
             task_id="dbt_test",
-            bash_command=(
-                f"docker exec {DBT_CONTAINER} "
-                f"dbt test --project-dir {DBT_PROJECT_DIR_IN_CONTAINER} --profiles-dir {DBT_PROFILES_DIR}"
-            ),
+            bash_command=f"{EXEC} dbt test {DBT_FLAGS}",
             doc_md="""
-            ### dbt test
-            Runs the schema tests (not_null, accepted_values, relationships)
-            validating fct_zone_features integrity before training.
+            Schema tests on staging plus grain, completeness, reconciliation
+            and leakage checks on fct_zone_features. Training does not start
+            unless these pass.
             """,
         )
 
-        dbt_run_task >> dbt_test_task
+        dbt_seed >> dbt_run >> dbt_test
 
-    train_model_task = BashOperator(
+    train_model = BashOperator(
         task_id="train_model",
-        bash_command=f"docker exec {JUPYTER_CONTAINER} /usr/bin/python3 {SRC_DIR_IN_JUPYTER}/train.py",
+        bash_command=f"{EXEC} {PYTHON} {SRC_DIR}/train.py --source snowflake",
         doc_md="""
-        ### Train model
-        Pulls fct_zone_features from Snowflake, tunes a LightGBM regressor
-        with Optuna, logs the run to MLflow, and evaluates the tuned model
-        on the held-out February data.
+        Train one LightGBM model per horizon (1, 2, 3 hours ahead), score each
+        against baselines on the held-out February data, and log to MLflow.
         """,
     )
 
-    ingest_task >> dbt_build >> train_model_task
+    previous >> dbt_build >> train_model
